@@ -1,16 +1,17 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Response
 from pydantic import BaseModel
 from typing import List
 import math
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# Enable CORS for POST requests from any origin
+# 1. Keep Middleware (as a backup)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -18,79 +19,93 @@ class LatencyRequest(BaseModel):
     regions: List[str]
     threshold_ms: float
 
+def calculate_p95(data):
+    if not data:
+        return 0
+    data.sort()
+    index = 0.95 * (len(data) - 1)
+    lower = int(math.floor(index))
+    upper = int(math.ceil(index))
+    if lower == upper:
+        return data[lower]
+    fraction = index - lower
+    return data[lower] * (1 - fraction) + data[upper] * fraction
 
-def calculate_p95(values: List[float]) -> float:
-    values = sorted(values)
-    idx = 0.95 * (len(values) - 1)
-    lo = int(math.floor(idx))
-    hi = int(math.ceil(idx))
-    if lo == hi:
-        return values[lo]
-    frac = idx - lo
-    return values[lo] * (1 - frac) + values[hi] * frac
+# 2. Explicit OPTIONS Handler (Fixes "Preflight" errors)
+@app.options("/api/latency")
+async def options_latency(response: Response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return {}
 
-@app.post("/")
-async def latency_metrics(request: LatencyRequest):
-    data = [
-        # apac
-        {"region": "apac", "latency_ms": 196.92, "uptime_pct": 97.52},
-        {"region": "apac", "latency_ms": 215.23, "uptime_pct": 98.142},
-        {"region": "apac", "latency_ms": 178.05, "uptime_pct": 99.124},
-        {"region": "apac", "latency_ms": 187.17, "uptime_pct": 97.967},
-        {"region": "apac", "latency_ms": 201.07, "uptime_pct": 98.284},
-        {"region": "apac", "latency_ms": 106.28, "uptime_pct": 97.326},
-        {"region": "apac", "latency_ms": 210.01, "uptime_pct": 97.963},
-        {"region": "apac", "latency_ms": 208.43, "uptime_pct": 97.15},
-        {"region": "apac", "latency_ms": 180.81, "uptime_pct": 99.15},
-        {"region": "apac", "latency_ms": 181.06, "uptime_pct": 98.27},
-        {"region": "apac", "latency_ms": 110.59, "uptime_pct": 97.685},
-        {"region": "apac", "latency_ms": 145.25, "uptime_pct": 98.555},
-
-        # emea
-        {"region": "emea", "latency_ms": 207.35, "uptime_pct": 98.063},
-        {"region": "emea", "latency_ms": 218.31, "uptime_pct": 97.977},
-        {"region": "emea", "latency_ms": 229.28, "uptime_pct": 97.288},
-        {"region": "emea", "latency_ms": 185.18, "uptime_pct": 98.834},
-        {"region": "emea", "latency_ms": 139.58, "uptime_pct": 98.413},
-        {"region": "emea", "latency_ms": 130.32, "uptime_pct": 97.45},
-        {"region": "emea", "latency_ms": 144.9, "uptime_pct": 97.865},
-        {"region": "emea", "latency_ms": 144.18, "uptime_pct": 97.552},
-        {"region": "emea", "latency_ms": 195.86, "uptime_pct": 98.869},
-        {"region": "emea", "latency_ms": 159.95, "uptime_pct": 97.614},
-        {"region": "emea", "latency_ms": 216.72, "uptime_pct": 98.289},
-        {"region": "emea", "latency_ms": 224.75, "uptime_pct": 99.003},
-
-        # amer
-        {"region": "amer", "latency_ms": 136.17, "uptime_pct": 97.238},
-        {"region": "amer", "latency_ms": 118.85, "uptime_pct": 98.276},
-        {"region": "amer", "latency_ms": 137.36, "uptime_pct": 98.956},
-        {"region": "amer", "latency_ms": 168.64, "uptime_pct": 98.682},
-        {"region": "amer", "latency_ms": 190.73, "uptime_pct": 98.58},
-        {"region": "amer", "latency_ms": 113.19, "uptime_pct": 99.49},
-        {"region": "amer", "latency_ms": 204.79, "uptime_pct": 98.8},
-        {"region": "amer", "latency_ms": 122.95, "uptime_pct": 98.943},
-        {"region": "amer", "latency_ms": 143.84, "uptime_pct": 98.273},
-        {"region": "amer", "latency_ms": 172.84, "uptime_pct": 98.882},
-        {"region": "amer", "latency_ms": 129.01, "uptime_pct": 98.817},
-        {"region": "amer", "latency_ms": 178.29, "uptime_pct": 97.92},
+# 3. Main Handler with Manual Header Injection
+@app.post("/api/latency")
+async def check_latency(request: LatencyRequest, response: Response):
+    # FORCE the header on the response object
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    
+    # EMBEDDED DATA
+    data_source = [
+      {"region": "apac", "service": "recommendations", "latency_ms": 196.92, "uptime_pct": 97.52, "timestamp": 20250301},
+      {"region": "apac", "service": "analytics", "latency_ms": 215.23, "uptime_pct": 98.142, "timestamp": 20250302},
+      {"region": "apac", "service": "recommendations", "latency_ms": 178.05, "uptime_pct": 99.124, "timestamp": 20250303},
+      {"region": "apac", "service": "checkout", "latency_ms": 187.17, "uptime_pct": 97.967, "timestamp": 20250304},
+      {"region": "apac", "service": "analytics", "latency_ms": 201.07, "uptime_pct": 98.284, "timestamp": 20250305},
+      {"region": "apac", "service": "recommendations", "latency_ms": 106.28, "uptime_pct": 97.326, "timestamp": 20250306},
+      {"region": "apac", "service": "support", "latency_ms": 210.01, "uptime_pct": 97.963, "timestamp": 20250307},
+      {"region": "apac", "service": "catalog", "latency_ms": 208.43, "uptime_pct": 97.15, "timestamp": 20250308},
+      {"region": "apac", "service": "recommendations", "latency_ms": 180.81, "uptime_pct": 99.15, "timestamp": 20250309},
+      {"region": "apac", "service": "recommendations", "latency_ms": 181.06, "uptime_pct": 98.27, "timestamp": 20250310},
+      {"region": "apac", "service": "catalog", "latency_ms": 110.59, "uptime_pct": 97.685, "timestamp": 20250311},
+      {"region": "apac", "service": "checkout", "latency_ms": 145.25, "uptime_pct": 98.555, "timestamp": 20250312},
+      {"region": "emea", "service": "recommendations", "latency_ms": 207.35, "uptime_pct": 98.063, "timestamp": 20250301},
+      {"region": "emea", "service": "support", "latency_ms": 218.31, "uptime_pct": 97.977, "timestamp": 20250302},
+      {"region": "emea", "service": "recommendations", "latency_ms": 229.28, "uptime_pct": 97.288, "timestamp": 20250303},
+      {"region": "emea", "service": "support", "latency_ms": 185.18, "uptime_pct": 98.834, "timestamp": 20250304},
+      {"region": "emea", "service": "support", "latency_ms": 139.58, "uptime_pct": 98.413, "timestamp": 20250305},
+      {"region": "emea", "service": "catalog", "latency_ms": 130.32, "uptime_pct": 97.45, "timestamp": 20250306},
+      {"region": "emea", "service": "checkout", "latency_ms": 144.9, "uptime_pct": 97.865, "timestamp": 20250307},
+      {"region": "emea", "service": "support", "latency_ms": 144.18, "uptime_pct": 97.552, "timestamp": 20250308},
+      {"region": "emea", "service": "support", "latency_ms": 195.86, "uptime_pct": 98.869, "timestamp": 20250309},
+      {"region": "emea", "service": "payments", "latency_ms": 159.95, "uptime_pct": 97.614, "timestamp": 20250310},
+      {"region": "emea", "service": "checkout", "latency_ms": 216.72, "uptime_pct": 98.289, "timestamp": 20250311},
+      {"region": "emea", "service": "catalog", "latency_ms": 224.75, "uptime_pct": 99.003, "timestamp": 20250312},
+      {"region": "amer", "service": "support", "latency_ms": 136.17, "uptime_pct": 97.238, "timestamp": 20250301},
+      {"region": "amer", "service": "support", "latency_ms": 118.85, "uptime_pct": 98.276, "timestamp": 20250302},
+      {"region": "amer", "service": "payments", "latency_ms": 137.36, "uptime_pct": 98.956, "timestamp": 20250303},
+      {"region": "amer", "service": "catalog", "latency_ms": 168.64, "uptime_pct": 98.682, "timestamp": 20250304},
+      {"region": "amer", "service": "recommendations", "latency_ms": 190.73, "uptime_pct": 98.58, "timestamp": 20250305},
+      {"region": "amer", "service": "payments", "latency_ms": 113.19, "uptime_pct": 99.49, "timestamp": 20250306},
+      {"region": "amer", "service": "recommendations", "latency_ms": 204.79, "uptime_pct": 98.8, "timestamp": 20250307},
+      {"region": "amer", "service": "analytics", "latency_ms": 122.95, "uptime_pct": 98.943, "timestamp": 20250308},
+      {"region": "amer", "service": "analytics", "latency_ms": 143.84, "uptime_pct": 98.273, "timestamp": 20250309},
+      {"region": "amer", "service": "checkout", "latency_ms": 172.84, "uptime_pct": 98.882, "timestamp": 20250310},
+      {"region": "amer", "service": "recommendations", "latency_ms": 129.01, "uptime_pct": 98.817, "timestamp": 20250311},
+      {"region": "amer", "service": "analytics", "latency_ms": 178.29, "uptime_pct": 97.92, "timestamp": 20250312}
     ]
 
     results = []
-
+    
     for region in request.regions:
-        rows = [d for d in data if d["region"] == region]
-        if not rows:
+        region_data = [d for d in data_source if d['region'] == region]
+        if not region_data:
             continue
-
-        latencies = [d["latency_ms"] for d in rows]
-        uptimes = [d["uptime_pct"] for d in rows]
-
+            
+        latencies = [d['latency_ms'] for d in region_data]
+        uptimes = [d['uptime_pct'] for d in region_data]
+        
+        avg_latency = sum(latencies) / len(latencies)
+        p95_latency = calculate_p95(latencies)
+        avg_uptime = sum(uptimes) / len(uptimes)
+        breaches = sum(1 for l in latencies if l > request.threshold_ms)
+        
         results.append({
             "region": region,
-            "avg_latency": round(sum(latencies) / len(latencies), 2),
-            "p95_latency": round(calculate_p95(latencies), 2),
-            "avg_uptime": round(sum(uptimes) / len(uptimes), 2),
-            "breaches": sum(1 for l in latencies if l > request.threshold_ms),
+            "avg_latency": round(avg_latency, 2),
+            "p95_latency": round(p95_latency, 2),
+            "avg_uptime": round(avg_uptime, 2),
+            "breaches": breaches
         })
-
+        
     return results
