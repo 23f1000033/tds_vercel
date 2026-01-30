@@ -20,8 +20,6 @@ class LatencyRequest(BaseModel):
 
 
 def calculate_p95(values: List[float]) -> float:
-    if not values:
-        return 0.0
     values = sorted(values)
     idx = 0.95 * (len(values) - 1)
     lo = int(math.floor(idx))
@@ -32,11 +30,10 @@ def calculate_p95(values: List[float]) -> float:
     return values[lo] * (1 - frac) + values[hi] * frac
 
 
-# IMPORTANT: route is "/" — Vercel handles /api/latency
 @app.post("/")
 async def latency_metrics(request: LatencyRequest):
     data = [
-        # ---- apac ----
+        # apac
         {"region": "apac", "latency_ms": 196.92, "uptime_pct": 97.52},
         {"region": "apac", "latency_ms": 215.23, "uptime_pct": 98.142},
         {"region": "apac", "latency_ms": 178.05, "uptime_pct": 99.124},
@@ -50,7 +47,7 @@ async def latency_metrics(request: LatencyRequest):
         {"region": "apac", "latency_ms": 110.59, "uptime_pct": 97.685},
         {"region": "apac", "latency_ms": 145.25, "uptime_pct": 98.555},
 
-        # ---- emea ----
+        # emea
         {"region": "emea", "latency_ms": 207.35, "uptime_pct": 98.063},
         {"region": "emea", "latency_ms": 218.31, "uptime_pct": 97.977},
         {"region": "emea", "latency_ms": 229.28, "uptime_pct": 97.288},
@@ -64,7 +61,7 @@ async def latency_metrics(request: LatencyRequest):
         {"region": "emea", "latency_ms": 216.72, "uptime_pct": 98.289},
         {"region": "emea", "latency_ms": 224.75, "uptime_pct": 99.003},
 
-        # ---- amer ----
+        # amer
         {"region": "amer", "latency_ms": 136.17, "uptime_pct": 97.238},
         {"region": "amer", "latency_ms": 118.85, "uptime_pct": 98.276},
         {"region": "amer", "latency_ms": 137.36, "uptime_pct": 98.956},
@@ -82,12 +79,12 @@ async def latency_metrics(request: LatencyRequest):
     results = []
 
     for region in request.regions:
-        rows = [r for r in data if r["region"] == region]
+        rows = [d for d in data if d["region"] == region]
         if not rows:
             continue
 
-        latencies = [r["latency_ms"] for r in rows]
-        uptimes = [r["uptime_pct"] for r in rows]
+        latencies = [d["latency_ms"] for d in rows]
+        uptimes = [d["uptime_pct"] for d in rows]
 
         results.append({
             "region": region,
