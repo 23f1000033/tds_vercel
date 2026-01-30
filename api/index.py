@@ -9,7 +9,7 @@ app = FastAPI()
 # 1. Keep Middleware (as a backup)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://exam.sanand.workers.dev/"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
