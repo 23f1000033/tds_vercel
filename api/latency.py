@@ -29,7 +29,6 @@ def calculate_p95(values: List[float]) -> float:
     frac = idx - lo
     return values[lo] * (1 - frac) + values[hi] * frac
 
-
 @app.post("/")
 async def latency_metrics(request: LatencyRequest):
     data = [
